@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 )
@@ -31,13 +32,12 @@ func main() {
 func handle(conn net.Conn) {
 	defer conn.Close()
 
-	buf := make([]byte, 1024)
+	reader := bufio.NewReader(conn)
 	for {
-		n, err := conn.Read(buf)
+		args, err := readCommand(reader)
 		if err != nil {
 			return
 		}
-
-		conn.Write(buf[:n])
+		fmt.Println("got command:", args)
 	}
 }
