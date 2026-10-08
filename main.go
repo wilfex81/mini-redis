@@ -39,5 +39,6 @@ func handle(conn net.Conn) {
 			return
 		}
 		fmt.Println("got command:", args)
+		conn.Write([]byte(execute(args)))
 	}
 }
