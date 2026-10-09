@@ -21,7 +21,7 @@ func intReply(n int) string {
 
 const nilReply = "$-1\r\n"
 
-func execute(args []string) string {
+func execute(s *Store, args []string) string {
 	if len(args) == 0 {
 		return errorReply("empty command")
 	}
@@ -38,6 +38,29 @@ func execute(args []string) string {
 			return errorReply("Wrong number of arguments for 'echo' command")
 		}
 		return bulkString(args[1])
+
+	case "SET":
+		if len(args) != 3 {
+			return errorReply("wrong number of arguments for 'set' command")
+		}
+		s.set(args[1], args[2])
+		return simpleString("OK")
+
+	case "GET":
+		if len(args) != 2 {
+			return errorReply("wrong number of arguments for 'get' command")
+		}
+		v, ok := s.get(args[1])
+		if !ok {
+			return nilReply
+		}
+		return bulkString(v)
+
+	case "DEL":
+		if len(args) < 2 {
+			return errorReply("wrong number of arguments for 'del' command")
+		}
+		return intReply(s.del(args[1:]...))
 
 	default:
 		return errorReply("Unkown command '" + args[0] + "'")
