@@ -15,6 +15,12 @@ func bulkString(s string) string {
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
 }
 
+func intReply(n int) string {
+	return fmt.Sprintf(":%d\r\n", n)
+}
+
+const nilReply = "$-1\r\n"
+
 func execute(args []string) string {
 	if len(args) == 0 {
 		return errorReply("empty command")
