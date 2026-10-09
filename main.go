@@ -13,7 +13,7 @@ func main() {
 		fmt.Println("listen error:", err)
 		return
 	}
-
+	db := newStore()
 	defer listener.Close()
 	fmt.Println("Listening on :6380")
 
@@ -25,11 +25,11 @@ func main() {
 			continue
 		}
 		// Handle each client in its own goroutine
-		go handle(conn)
+		go handle(conn, db)
 	}
 }
 
-func handle(conn net.Conn) {
+func handle(conn net.Conn, db *Store) {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
@@ -38,7 +38,6 @@ func handle(conn net.Conn) {
 		if err != nil {
 			return
 		}
-		fmt.Println("got command:", args)
-		conn.Write([]byte(execute(args)))
+		conn.Write([]byte(execute(db, args)))
 	}
 }
