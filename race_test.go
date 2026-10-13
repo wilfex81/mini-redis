@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestConcurrentSet(t *testing.T)  {
+func TestConcurrentSet(t *testing.T) {
 	db := newStore()
 	var wg sync.WaitGroup
 
@@ -15,7 +15,7 @@ func TestConcurrentSet(t *testing.T)  {
 		go func(n int) {
 			defer wg.Done()
 			for j := 0; j < 1000; j++ {
-				db.set("key"+strconv.Itoa(n), "value")
+				db.set("key"+strconv.Itoa(n), "value", 0)
 				db.get("key" + strconv.Itoa(n))
 			}
 		}(i)
