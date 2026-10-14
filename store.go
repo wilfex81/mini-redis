@@ -94,6 +94,24 @@ func (s *Store) keys(pattern string) []string {
 	return result
 }
 
+func (s *Store) hset(key string, pairs ...string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h, ok := s.hashes[key]
+	if !ok {
+		h = make(map[string]string)
+		s.hashes[key] = h
+	}
+	added := 0
+	for i := 0; i < len(pairs); i += 2 {
+		if _, exists := h[pairs[i]]; !exists {
+			added++
+		}
+		h[pairs[i]] = pairs[i+1]
+	}
+	return added
+}
+
 // expired reports whether a key is past its expiry.
 // The caller must already hold the lock.
 func (s *Store) expired(key string) bool {
