@@ -21,6 +21,14 @@ func intReply(n int) string {
 	return fmt.Sprintf(":%d\r\n", n)
 }
 
+func arrayReply(items []string) string {
+	out := fmt.Sprintf("*%d\r\n", len(items))
+	for _, it := range items {
+		out += bulkString(it)
+	}
+	return out
+}
+
 const nilReply = "$-1\r\n"
 
 func execute(s *Store, args []string) string {
@@ -93,6 +101,38 @@ func execute(s *Store, args []string) string {
 			return errorReply("wrong number of arguments for 'del' command")
 		}
 		return intReply(s.del(args[1:]...))
+
+	case "INCR":
+		if len(args) != 2 {
+			return errorReply("wrong number of arguments for 'incr' command")
+		}
+		n, err := s.incr(args[1], 1)
+		if err != nil {
+			return errorReply(err.Error())
+		}
+		return intReply(n)
+
+	case "DECR":
+		if len(args) != 2 {
+			return errorReply("wrong number of arguments for 'decr' command")
+		}
+		n, err := s.incr(args[1], -1)
+		if err != nil {
+			return errorReply(err.Error())
+		}
+		return intReply(n)
+
+	case "EXISTS":
+		if len(args) < 2 {
+			return errorReply("wrong number of arguments for 'exists' command")
+		}
+		return intReply(s.exists(args[1:]...))
+
+	case "KEYS":
+		if len(args) != 2 {
+			return errorReply("wrong number of arguments for 'keys' command")
+		}
+		return arrayReply(s.keys(args[1]))
 
 	default:
 		return errorReply("Unkown command '" + args[0] + "'")
