@@ -134,6 +134,50 @@ func execute(s *Store, args []string) string {
 		}
 		return arrayReply(s.keys(args[1]))
 
+	case "HSET":
+		if len(args) < 4 || len(args)%2 != 0 {
+			return errorReply("wrong number of arguments for 'hset' command")
+		}
+		return intReply(s.hset(args[1], args[2:]...))
+	case "HGET":
+		if len(args) != 3 {
+			return errorReply("wrong number of arguments for 'hget' command")
+		}
+		v, ok := s.hget(args[1], args[2])
+		if !ok {
+			return nilReply
+		}
+		return bulkString(v)
+
+	case "HGETALL":
+		if len(args) != 2 {
+			return errorReply("wrong number of arguments for 'hgetall' command")
+		}
+		return arrayReply(s.hgetall(args[1]))
+
+	case "LPUSH":
+		if len(args) < 3 {
+			return errorReply("wrong number of arguments for 'lpush' command")
+		}
+		return intReply(s.lpush(args[1], args[2:]...))
+
+	case "RPUSH":
+		if len(args) < 3 {
+			return errorReply("wrong number of arguments for 'rpush' command")
+		}
+		return intReply(s.rpush(args[1], args[2:]...))
+
+	case "LRANGE":
+		if len(args) != 4 {
+			return errorReply("wrong number of arguments for 'lrange' command")
+		}
+		start, err1 := strconv.Atoi(args[2])
+		stop, err2 := strconv.Atoi(args[3])
+		if err1 != nil || err2 != nil {
+			return errorReply("value is not an integer or out of range")
+		}
+		return arrayReply(s.lrange(args[1], start, stop))
+
 	default:
 		return errorReply("Unkown command '" + args[0] + "'")
 	}
