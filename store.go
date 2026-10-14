@@ -1,9 +1,14 @@
 package main
 
 import (
+	"errors"
+	"path"
+	"strconv"
 	"sync"
 	"time"
 )
+
+var errNotInt = errors.New("value is not an integrer or out of range")
 
 type Store struct {
 	mu      sync.RWMutex
@@ -18,6 +23,59 @@ func newStore() *Store {
 	}
 	go s.cleanup() // runs forever in the background
 	return s
+}
+
+// adds delta to a key. A missing key counts as 0
+func (s *Store) incr(key string, delta int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.expired(key) {
+		delete(s.data, key)
+		delete(s.expires, key)
+	}
+
+	n := 0
+	if v, ok := s.data[key]; ok {
+		parsed, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, errNotInt
+		}
+		n = parsed
+	}
+	n += delta
+	s.data[key] = strconv.Itoa(n)
+	return n, nil
+}
+
+// counts how many of the given keys are present
+func (s *Store) exists(keys ...string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	count := 0
+	for _, k := range keys {
+		if _, ok := s.data[k]; ok && !s.expired(k) {
+			count++
+		}
+	}
+	return count
+}
+
+// Keys returns all live keys matching a global pattern like "user:*"
+func (s *Store) keys(pattern string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := []string{}
+	for k := range s.data {
+		if s.expired(k) {
+			continue
+		}
+		if ok, _ := path.Match(pattern, k); ok {
+			result = append(result, k)
+		}
+	}
+	return result
+
 }
 
 // expired reports whether a key is past its expiry.
