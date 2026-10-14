@@ -112,6 +112,66 @@ func (s *Store) hset(key string, pairs ...string) int {
 	return added
 }
 
+func (s *Store) hget(key, field string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.hashes[key][field]
+	return v, ok
+}
+
+func (s *Store) hgetall(key string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := []string{}
+	for f, v := range s.hashes[key] {
+		result = append(result, f, v)
+	}
+	return result
+}
+
+func (s *Store) lpush(key string, vals ...string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l := s.lists[key]
+	for _, v := range vals {
+		l = append([]string{v}, l...)
+	}
+	s.lists[key] = l
+	return len(l)
+}
+
+func (s *Store) rpush(key string, vals ...string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lists[key] = append(s.lists[key], vals...)
+	return len(s.lists[key])
+}
+
+func (s *Store) lrange(key string, start, stop int) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	l := s.lists[key]
+	n := len(l)
+	if start < 0 {
+		start += n
+	}
+	if stop < 0 {
+		stop += n
+	}
+	if start < 0 {
+		start = 0
+	}
+	if stop >= n {
+		stop = n - 1
+	}
+	if start > stop {
+		return []string{}
+	}
+	out := make([]string, stop-start+1)
+	copy(out, l[start:stop+1]) // copy so callers never touch our slice
+	return out
+}
+
 // expired reports whether a key is past its expiry.
 // The caller must already hold the lock.
 func (s *Store) expired(key string) bool {
