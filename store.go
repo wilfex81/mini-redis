@@ -58,7 +58,10 @@ func (s *Store) exists(keys ...string) int {
 	defer s.mu.RUnlock()
 	count := 0
 	for _, k := range keys {
-		if _, ok := s.data[k]; ok && !s.expired(k) {
+		_, inData := s.data[k]
+		_, inHash := s.hashes[k]
+		_, inList := s.lists[k]
+		if (inData && !s.expired(k)) || inHash || inList {
 			count++
 		}
 	}
@@ -78,8 +81,17 @@ func (s *Store) keys(pattern string) []string {
 			result = append(result, k)
 		}
 	}
+	for k := range s.hashes {
+		if ok, _ := path.Match(pattern, k); ok {
+			result = append(result, k)
+		}
+	}
+	for k := range s.lists {
+		if ok, _ := path.Match(pattern, k); ok {
+			result = append(result, k)
+		}
+	}
 	return result
-
 }
 
 // expired reports whether a key is past its expiry.
@@ -116,10 +128,22 @@ func (s *Store) del(keys ...string) int {
 	defer s.mu.Unlock()
 	count := 0
 	for _, k := range keys {
+		found := false
 		if _, ok := s.data[k]; ok && !s.expired(k) {
+			found = true
+		}
+		if _, ok := s.hashes[k]; ok {
+			found = true
+		}
+		if _, ok := s.lists[k]; ok {
+			found = true
+		}
+		if found {
 			count++
 		}
 		delete(s.data, k)
+		delete(s.hashes, k)
+		delete(s.lists, k)
 		delete(s.expires, k)
 	}
 	return count
