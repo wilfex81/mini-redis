@@ -13,15 +13,19 @@ var errNotInt = errors.New("value is not an integer or out of range")
 type Store struct {
 	mu      sync.RWMutex
 	data    map[string]string
+	hashes  map[string]map[string]string
+	lists   map[string][]string
 	expires map[string]time.Time
 }
 
 func newStore() *Store {
 	s := &Store{
 		data:    make(map[string]string),
+		hashes:  make(map[string]map[string]string),
+		lists:   make(map[string][]string),
 		expires: make(map[string]time.Time),
 	}
-	go s.cleanup() // runs forever in the background
+	go s.cleanup()
 	return s
 }
 
