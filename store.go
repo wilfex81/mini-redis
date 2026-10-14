@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var errNotInt = errors.New("value is not an integrer or out of range")
+var errNotInt = errors.New("value is not an integer or out of range")
 
 type Store struct {
 	mu      sync.RWMutex
