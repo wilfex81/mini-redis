@@ -15,7 +15,7 @@ type aof struct {
 
 func openAOF(path string) (*aof, error) {
 	// create if missing, read and write, always append at the end
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
