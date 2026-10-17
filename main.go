@@ -13,8 +13,22 @@ func main() {
 		fmt.Println("listen error:", err)
 		return
 	}
-	db := newStore()
 	defer listener.Close()
+
+	db := newStore()
+
+	journal, err := openAOF("appendonly.aof")
+	if err != nil {
+		fmt.Println("aof error:", err)
+		return
+	}
+	defer journal.file.Close()
+
+	n, err := journal.replay(db)
+	if err != nil {
+		fmt.Println("replay stopped early:", err)
+	}
+	fmt.Println("replayed", n, "commands")
 	fmt.Println("Listening on :6380")
 
 	for {
