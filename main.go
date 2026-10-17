@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"strings"
 )
 
 func main() {
@@ -39,11 +40,11 @@ func main() {
 			continue
 		}
 		// Handle each client in its own goroutine
-		go handle(conn, db)
+		go handle(conn, db, journal)
 	}
 }
 
-func handle(conn net.Conn, db *Store) {
+func handle(conn net.Conn, db *Store, journal *aof) {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
@@ -52,6 +53,12 @@ func handle(conn net.Conn, db *Store) {
 		if err != nil {
 			return
 		}
-		conn.Write([]byte(execute(db, args)))
+		reply := execute(db, args)
+		if isWrite(args) && !strings.HasPrefix(reply, "-") {
+			if err := journal.write(args); err != nil {
+				fmt.Println("aof write error:", err)
+			}
+		}
+		conn.Write([]byte(reply))
 	}
 }
