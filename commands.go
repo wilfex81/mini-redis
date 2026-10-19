@@ -179,6 +179,6 @@ func execute(s *Store, args []string) string {
 		return arrayReply(s.lrange(args[1], start, stop))
 
 	default:
-		return errorReply("Unkown command '" + args[0] + "'")
+		return errorReply("unkown command '" + args[0] + "'")
 	}
 }

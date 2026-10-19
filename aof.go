@@ -5,12 +5,13 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
+	"time"
 )
 
 type aof struct {
-	mu   sync.Mutex
 	file *os.File
+	ch   chan string
+	done chan struct{}
 }
 
 func openAOF(path string) (*aof, error) {
@@ -19,17 +20,51 @@ func openAOF(path string) (*aof, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &aof{file: f}, nil
+	a := &aof{
+		file: f,
+		ch:   make(chan string, 4096),
+		done: make(chan struct{}),
+	}
+	go a.loop()
+	return a, nil
 }
 
-// Write appends one command to the file and flushes and flushes it to disk
-func (a *aof) write(args []string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if _, err := a.file.WriteString(arrayReply(args)); err != nil {
-		return err
+// Only section that writes to file
+func (a *aof) loop() {
+	defer close(a.done)
+	w := bufio.NewWriter(a.file)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	flush := func() {
+		w.Flush()
+		a.file.Sync()
 	}
-	return a.file.Sync()
+
+	for {
+		select {
+		case cmd, ok := <-a.ch:
+			if !ok {
+				flush()
+				return
+			}
+			w.WriteString(cmd)
+		case <-ticker.C:
+			flush()
+		}
+	}
+}
+
+// Write queues a command. It returns right away
+func (a *aof) write(args []string) {
+	a.ch <- arrayReply(args)
+}
+
+// flushes everything and stops the writer
+func (a *aof) close() {
+	close(a.ch)
+	<-a.done
+	a.file.Close()
 }
 
 // replay runs every logged command against the Store.

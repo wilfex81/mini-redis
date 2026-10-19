@@ -1,64 +1,87 @@
 package main
 
 import (
-	"bufio"
+	"context"
 	"fmt"
-	"net"
+	"log"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
+
+	"github.com/panjf2000/gnet/v2"
 )
 
-func main() {
-	// Listen for TCP connection on port 6380
-	listener, err := net.Listen("tcp", ":6380")
-	if err != nil {
-		fmt.Println("listen error:", err)
-		return
-	}
-	defer listener.Close()
+type server struct {
+	gnet.BuiltinEventEngine // empty versions of every callback
+	db                      *Store
+	journal                 *aof
+}
 
+// runs once when the server starts
+func (s *server) OnBoot(eng gnet.Engine) gnet.Action {
+	fmt.Println("Listening on :6380")
+	return gnet.None
+}
+
+// runs whenever a client sends bytes
+func (s *server) OnTraffic(c gnet.Conn) gnet.Action {
+	buf, _ := c.Peek(c.InboundBuffered()) // look at all bytes without removing them
+	pos := 0
+
+	for pos < len(buf) {
+		args, used, err := parseCommand(buf[pos:])
+		if err != nil {
+			c.Write([]byte(errorReply("protocol error")))
+			return gnet.Close
+		}
+		if used == 0 {
+			break
+		}
+		pos += used
+
+		reply := execute(s.db, args)
+		if isWrite(args) && !strings.HasPrefix(reply, "-") {
+			s.journal.write(args)
+		}
+		c.Write([]byte(reply))
+	}
+	c.Discard(pos) //remove only one bite we fully handled
+	return gnet.None
+}
+
+func main() {
 	db := newStore()
 
 	journal, err := openAOF("appendonly.aof")
 	if err != nil {
-		fmt.Println("aof error:", err)
-		return
+		log.Fatal("aof error: ", err)
 	}
-	defer journal.file.Close()
 
 	n, err := journal.replay(db)
 	if err != nil {
 		fmt.Println("replay stopped early:", err)
 	}
 	fmt.Println("replayed", n, "commands")
-	fmt.Println("Listening on :6380")
 
-	for {
-		// Wait on client to connect
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println("accept error:", err)
-			continue
-		}
-		// Handle each client in its own goroutine
-		go handle(conn, db, journal)
+	addr := "tcp://:6380"
+
+	// on CTRL+c, stop the server cleanly
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		gnet.Stop(ctx, addr)
+	}()
+
+	srv := &server{db: db, journal: journal}
+	if err := gnet.Run(srv, addr, gnet.WithMulticore(true)); err != nil {
+		fmt.Println("server error:", err)
 	}
-}
 
-func handle(conn net.Conn, db *Store, journal *aof) {
-	defer conn.Close()
-
-	reader := bufio.NewReader(conn)
-	for {
-		args, err := readCommand(reader)
-		if err != nil {
-			return
-		}
-		reply := execute(db, args)
-		if isWrite(args) && !strings.HasPrefix(reply, "-") {
-			if err := journal.write(args); err != nil {
-				fmt.Println("aof write error:", err)
-			}
-		}
-		conn.Write([]byte(reply))
-	}
+	journal.close() // flush the last buffered writes before exiting
+	fmt.Println("shutdown complete")
 }
