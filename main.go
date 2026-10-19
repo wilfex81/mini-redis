@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/panjf2000/gnet/v2"
 )
@@ -38,9 +43,7 @@ func (s *server) OnTraffic(c gnet.Conn) gnet.Action {
 
 		reply := execute(s.db, args)
 		if isWrite(args) && !strings.HasPrefix(reply, "-") {
-			if err := s.journal.write(args); err != nil {
-				fmt.Println("aof write error:", err)
-			}
+			s.journal.write(args)
 		}
 		c.Write([]byte(reply))
 	}
@@ -55,7 +58,6 @@ func main() {
 	if err != nil {
 		log.Fatal("aof error: ", err)
 	}
-	defer journal.file.Close()
 
 	n, err := journal.replay(db)
 	if err != nil {
@@ -63,6 +65,23 @@ func main() {
 	}
 	fmt.Println("replayed", n, "commands")
 
+	addr := "tcp://:6380"
+
+	// on CTRL+c, stop the server cleanly
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		gnet.Stop(ctx, addr)
+	}()
+
 	srv := &server{db: db, journal: journal}
-	log.Fatal(gnet.Run(srv, "tcp://:6380", gnet.WithMulticore(true)))
+	if err := gnet.Run(srv, addr, gnet.WithMulticore(true)); err != nil {
+		fmt.Println("server error:", err)
+	}
+
+	journal.close() // flush the last buffered writes before exiting
+	fmt.Println("shutdown complete")
 }
