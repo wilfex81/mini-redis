@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -27,6 +28,13 @@ func arrayReply(items []string) string {
 		out += bulkString(it)
 	}
 	return out
+}
+
+func errFrom(err error) string {
+	if errors.Is(err, errWrongType) {
+		return "-" + err.Error() + "\r\n"
+	}
+	return errorReply(err.Error())
 }
 
 const nilReply = "$-1\r\n"
@@ -90,7 +98,10 @@ func execute(s *Store, args []string) string {
 		if len(args) != 2 {
 			return errorReply("wrong number of arguments for 'get' command")
 		}
-		v, ok := s.get(args[1])
+		v, ok, err := s.get(args[1])
+		if err != nil {
+			return errFrom(err)
+		}
 		if !ok {
 			return nilReply
 		}
@@ -108,7 +119,7 @@ func execute(s *Store, args []string) string {
 		}
 		n, err := s.incr(args[1], 1)
 		if err != nil {
-			return errorReply(err.Error())
+			return errFrom(err)
 		}
 		return intReply(n)
 
@@ -118,7 +129,7 @@ func execute(s *Store, args []string) string {
 		}
 		n, err := s.incr(args[1], -1)
 		if err != nil {
-			return errorReply(err.Error())
+			return errFrom(err)
 		}
 		return intReply(n)
 
@@ -138,12 +149,20 @@ func execute(s *Store, args []string) string {
 		if len(args) < 4 || len(args)%2 != 0 {
 			return errorReply("wrong number of arguments for 'hset' command")
 		}
-		return intReply(s.hset(args[1], args[2:]...))
+		n, err := s.hset(args[1], args[2:]...)
+		if err != nil {
+			return errFrom(err)
+		}
+		return intReply(n)
+
 	case "HGET":
 		if len(args) != 3 {
 			return errorReply("wrong number of arguments for 'hget' command")
 		}
-		v, ok := s.hget(args[1], args[2])
+		v, ok, err := s.hget(args[1], args[2])
+		if err != nil {
+			return errFrom(err)
+		}
 		if !ok {
 			return nilReply
 		}
@@ -153,19 +172,31 @@ func execute(s *Store, args []string) string {
 		if len(args) != 2 {
 			return errorReply("wrong number of arguments for 'hgetall' command")
 		}
-		return arrayReply(s.hgetall(args[1]))
+		items, err := s.hgetall(args[1])
+		if err != nil {
+			return errFrom(err)
+		}
+		return arrayReply(items)
 
 	case "LPUSH":
 		if len(args) < 3 {
 			return errorReply("wrong number of arguments for 'lpush' command")
 		}
-		return intReply(s.lpush(args[1], args[2:]...))
+		n, err := s.lpush(args[1], args[2:]...)
+		if err != nil {
+			return errFrom(err)
+		}
+		return intReply(n)
 
 	case "RPUSH":
 		if len(args) < 3 {
 			return errorReply("wrong number of arguments for 'rpush' command")
 		}
-		return intReply(s.rpush(args[1], args[2:]...))
+		n, err := s.rpush(args[1], args[2:]...)
+		if err != nil {
+			return errFrom(err)
+		}
+		return intReply(n)
 
 	case "LRANGE":
 		if len(args) != 4 {
@@ -176,7 +207,11 @@ func execute(s *Store, args []string) string {
 		if err1 != nil || err2 != nil {
 			return errorReply("value is not an integer or out of range")
 		}
-		return arrayReply(s.lrange(args[1], start, stop))
+		items, err := s.lrange(args[1], start, stop)
+		if err != nil {
+			return errFrom(err)
+		}
+		return arrayReply(items)
 
 	default:
 		return errorReply("unkown command '" + args[0] + "'")
