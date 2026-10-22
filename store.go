@@ -302,20 +302,29 @@ func (s *Store) lrange(key string, start, stop int) ([]string, error) {
 	return out, nil
 }
 
+// Set an absolute expiry time on an existing key
+func (s *Store) expireAt(key string, t time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.liveW(key)
+	if e == nil {
+		return false
+	}
+	e.expires = t
+	return true
+
+}
+
 func (s *Store) snapshot() [][]string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var cmds [][]string
 	for k, e := range s.data {
-		secs := 0
-		if !e.expires.IsZero() {
-			d := time.Until(e.expires)
-			if d <= 0 {
-				continue
-			}
-			secs = int(d/time.Second) + 1
+		if e.expired() {
+			continue
 		}
+
 		switch e.kind {
 		case kindString:
 			cmds = append(cmds, []string{"SET", k, e.str})
@@ -329,8 +338,9 @@ func (s *Store) snapshot() [][]string {
 			cmds = append(cmds, append([]string{"RPUSH", k}, e.list...))
 		}
 
-		if secs > 0 {
-			cmds = append(cmds, []string{"EXPIRE", k, strconv.Itoa(secs)})
+		if !e.expires.IsZero() {
+			ms := strconv.FormatInt(e.expires.UnixMilli(), 10)
+			cmds = append(cmds, []string{"PEXPIREAT", k, ms})
 		}
 	}
 	return cmds
