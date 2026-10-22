@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -117,6 +118,30 @@ func compactAOF(path string, db *Store) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// relative expiries become absolute, so a restart does not restart the clock
+func journalForm(args []string) [][]string {
+	switch strings.ToUpper(args[0]) {
+	case "EXPIRE":
+		secs, _ := strconv.Atoi(args[2])
+		return [][]string{{"PEXPIREAT", args[1], absMillis(secs)}}
+	case "SET":
+		if len(args) == 5 { // SET key value EX seconds
+			secs, _ := strconv.Atoi(args[4])
+			return [][]string{
+				{"SET", args[1], args[2]},
+				{"PEXPIREAT", args[1], absMillis(secs)},
+			}
+		}
+	}
+	return [][]string{args}
+}
+
+// absMillis returns "now plus secs" as unix milliseconds, in text form
+func absMillis(secs int) string {
+	t := time.Now().Add(time.Duration(secs) * time.Second)
+	return strconv.FormatInt(t.UnixMilli(), 10)
 }
 
 var writeCommands = map[string]bool{
