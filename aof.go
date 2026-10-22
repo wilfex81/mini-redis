@@ -15,8 +15,7 @@ type aof struct {
 }
 
 func openAOF(path string) (*aof, error) {
-	// create if missing, read and write, always append at the end
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +28,6 @@ func openAOF(path string) (*aof, error) {
 	return a, nil
 }
 
-// Only section that writes to file
 func (a *aof) loop() {
 	defer close(a.done)
 	w := bufio.NewWriter(a.file)
@@ -55,22 +53,29 @@ func (a *aof) loop() {
 	}
 }
 
-// Write queues a command. It returns right away
 func (a *aof) write(args []string) {
 	a.ch <- arrayReply(args)
 }
 
-// flushes everything and stops the writer
 func (a *aof) close() {
 	close(a.ch)
 	<-a.done
 	a.file.Close()
 }
 
-// replay runs every logged command against the Store.
-// It returns how many commands it ran
-func (a *aof) replay(db *Store) (int, error) {
-	reader := bufio.NewReader(a.file)
+// loadAOF runs every logged command against the store.
+// A missing file is fine, it just means a fresh start.
+func loadAOF(path string, db *Store) (int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	defer f.Close()
+
+	reader := bufio.NewReader(f)
 	count := 0
 	for {
 		args, err := readCommand(reader)
@@ -83,6 +88,35 @@ func (a *aof) replay(db *Store) (int, error) {
 		execute(db, args)
 		count++
 	}
+}
+
+// compactAOF writes the current state to a temp file,
+// then swaps it over the old file in one atomic step
+func compactAOF(path string, db *Store) error {
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	w := bufio.NewWriter(f)
+	for _, cmd := range db.snapshot() {
+		if _, err := w.WriteString(arrayReply(cmd)); err != nil {
+			f.Close()
+			return err
+		}
+	}
+	if err := w.Flush(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 var writeCommands = map[string]bool{
