@@ -227,6 +227,6 @@ func execute(s *Store, args []string) string {
 		return intReply(0)
 
 	default:
-		return errorReply("unkown command '" + args[0] + "'")
+		return errorReply("unknown command '" + args[0] + "'")
 	}
 }
