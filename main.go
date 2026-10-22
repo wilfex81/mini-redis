@@ -43,7 +43,9 @@ func (s *server) OnTraffic(c gnet.Conn) gnet.Action {
 
 		reply := execute(s.db, args)
 		if isWrite(args) && !strings.HasPrefix(reply, "-") {
-			s.journal.write(args)
+			for _, cmd := range journalForm(args) {
+				s.journal.write(cmd)
+			}
 		}
 		c.Write([]byte(reply))
 	}
