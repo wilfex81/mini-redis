@@ -213,6 +213,19 @@ func execute(s *Store, args []string) string {
 		}
 		return arrayReply(items)
 
+	case "PEXPIREAT":
+		if len(args) != 3 {
+			return errorReply("wrong number of arguments for 'pexpireat' command")
+		}
+		ms, err := strconv.ParseInt(args[2], 10, 64)
+		if err != nil {
+			return errorReply("value is not an integer or out of range")
+		}
+		if s.expireAt(args[1], time.UnixMilli(ms)) {
+			return intReply(1)
+		}
+		return intReply(0)
+
 	default:
 		return errorReply("unkown command '" + args[0] + "'")
 	}
