@@ -53,17 +53,20 @@ func (s *server) OnTraffic(c gnet.Conn) gnet.Action {
 
 func main() {
 	db := newStore()
+	const aofPath = "appendonly.aof"
 
-	journal, err := openAOF("appendonly.aof")
+	n, err := loadAOF(aofPath, db)
+	if err != nil {
+		fmt.Println("replay stopped early:", err)
+	} else if err := compactAOF(aofPath, db); err != nil {
+		fmt.Println("compact error:", err)
+	}
+	fmt.Println("replayed", n, "commands")
+
+	journal, err := openAOF(aofPath)
 	if err != nil {
 		log.Fatal("aof error: ", err)
 	}
-
-	n, err := journal.replay(db)
-	if err != nil {
-		fmt.Println("replay stopped early:", err)
-	}
-	fmt.Println("replayed", n, "commands")
 
 	addr := "tcp://:6380"
 

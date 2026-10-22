@@ -302,6 +302,40 @@ func (s *Store) lrange(key string, start, stop int) ([]string, error) {
 	return out, nil
 }
 
+func (s *Store) snapshot() [][]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var cmds [][]string
+	for k, e := range s.data {
+		secs := 0
+		if !e.expires.IsZero() {
+			d := time.Until(e.expires)
+			if d <= 0 {
+				continue
+			}
+			secs = int(d/time.Second) + 1
+		}
+		switch e.kind {
+		case kindString:
+			cmds = append(cmds, []string{"SET", k, e.str})
+		case kindHash:
+			cmd := []string{"HSET", k}
+			for f, v := range e.hash {
+				cmd = append(cmd, f, v)
+			}
+			cmds = append(cmds, cmd)
+		case kindList:
+			cmds = append(cmds, append([]string{"RPUSH", k}, e.list...))
+		}
+
+		if secs > 0 {
+			cmds = append(cmds, []string{"EXPIRE", k, strconv.Itoa(secs)})
+		}
+	}
+	return cmds
+}
+
 // cleanup removes expired keys once per second
 func (s *Store) cleanup() {
 	ticker := time.NewTicker(time.Second)
