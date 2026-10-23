@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strings"
@@ -11,23 +10,23 @@ import (
 	"time"
 
 	"github.com/panjf2000/gnet/v2"
+	"github.com/spf13/cobra"
 )
 
 type server struct {
-	gnet.BuiltinEventEngine // empty versions of every callback
-	db                      *Store
-	journal                 *aof
+	gnet.BuiltinEventEngine
+	addr    string
+	db      *Store
+	journal *aof
 }
 
-// runs once when the server starts
 func (s *server) OnBoot(eng gnet.Engine) gnet.Action {
-	fmt.Println("Listening on :6380")
+	fmt.Println("Listening on", s.addr)
 	return gnet.None
 }
 
-// runs whenever a client sends bytes
 func (s *server) OnTraffic(c gnet.Conn) gnet.Action {
-	buf, _ := c.Peek(c.InboundBuffered()) // look at all bytes without removing them
+	buf, _ := c.Peek(c.InboundBuffered())
 	pos := 0
 
 	for pos < len(buf) {
@@ -49,13 +48,32 @@ func (s *server) OnTraffic(c gnet.Conn) gnet.Action {
 		}
 		c.Write([]byte(reply))
 	}
-	c.Discard(pos) //remove only one bite we fully handled
+
+	c.Discard(pos)
 	return gnet.None
 }
 
 func main() {
+	var port int
+	var aofPath string
+
+	cmd := &cobra.Command{
+		Use:   "mini-redis",
+		Short: "A small Redis server written in Go",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return run(port, aofPath)
+		},
+	}
+	cmd.Flags().IntVarP(&port, "port", "p", 6380, "port to listen on")
+	cmd.Flags().StringVar(&aofPath, "aof", "appendonly.aof", "path of the append-only file")
+
+	if err := cmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run(port int, aofPath string) error {
 	db := newStore()
-	const aofPath = "appendonly.aof"
 
 	n, err := loadAOF(aofPath, db)
 	if err != nil {
@@ -67,12 +85,11 @@ func main() {
 
 	journal, err := openAOF(aofPath)
 	if err != nil {
-		log.Fatal("aof error: ", err)
+		return fmt.Errorf("aof error: %w", err)
 	}
 
-	addr := "tcp://:6380"
+	addr := fmt.Sprintf("tcp://:%d", port)
 
-	// on CTRL+c, stop the server cleanly
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -82,11 +99,13 @@ func main() {
 		gnet.Stop(ctx, addr)
 	}()
 
-	srv := &server{db: db, journal: journal}
-	if err := gnet.Run(srv, addr, gnet.WithMulticore(true)); err != nil {
-		fmt.Println("server error:", err)
-	}
+	srv := &server{addr: addr, db: db, journal: journal}
+	runErr := gnet.Run(srv, addr, gnet.WithMulticore(true))
 
-	journal.close() // flush the last buffered writes before exiting
+	journal.close() // flush buffered writes whether we stopped cleanly or not
+	if runErr != nil {
+		return runErr
+	}
 	fmt.Println("shutdown complete")
+	return nil
 }
