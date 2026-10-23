@@ -28,6 +28,25 @@ Flags:
 
 Port 6380 avoids a clash with a real Redis on 6379.
 
+## Docker
+
+Run the published image:
+
+```bash
+docker run -d --name mini-redis -p 6380:6380 -v mini-redis-data:/data ghcr.io/wilfex81/mini-redis:latest
+redis-cli -p 6380 PING
+```
+
+Or build it yourself with Compose:
+
+```bash
+docker compose up -d
+```
+
+The image is about 13 MB: a multi-stage build with a static Go binary on Alpine, running as a non-root user. The append-only file lives in the `/data` volume, so data survives removing and recreating the container. `docker stop` sends SIGTERM, and the server flushes the log before it exits.
+
+A GitHub Actions workflow runs `go vet` and `go test -race` on every push to `main`, then publishes the image to GitHub Container Registry. A version tag such as `v0.1.0` publishes a matching image tag.
+
 ## Commands
 
 | Group | Commands |
@@ -48,6 +67,9 @@ resp.go       RESP parser (partial-input aware) and the blocking reader used for
 commands.go   command dispatch and reply encoding
 store.go      typed in-memory keyspace behind one RWMutex
 aof.go        append-only file: background writer, replay, compaction
+
+Dockerfile, docker-compose.yml   container image and local run
+.github/workflows/docker.yml     CI: vet, race tests, publish image
 ```
 
 **Event loop.** gnet calls `OnTraffic` with whatever bytes arrived. `parseCommand` returns "incomplete" for a partial command and the bytes stay buffered until more arrive. Several commands in one read are handled in order. The parser is tested with every possible split point of a valid command.
@@ -64,7 +86,7 @@ On startup the log is replayed, then rewritten as the shortest set of commands t
 go test -race -cover
 ```
 
-Covers the parser (complete, partial, byte by byte, malformed, oversized), every command, wrong-type errors, expiry on every type, a snapshot round trip, and concurrent access under the race detector.
+Covers the parser (complete, partial, byte by byte, malformed, oversized), every command, wrong-type errors, expiry on every type, a snapshot round trip, and concurrent access under the race detector. The same checks run in CI on every push.
 
 ## Benchmarks
 
@@ -80,7 +102,7 @@ redis-benchmark -p 6380 -t set,get -n 100000 -c 50 -P 16 -q    # 16 pipelined co
 | No pipelining | 24,295 req/s | 21,477 req/s |
 | Pipelined (`-P 16`) | 123,767 req/s | 134,203 req/s |
 
-Without pipelining the limit is network round trips, not the server. SET stays close to GET with pipelining because the disk sync runs off the event loop.
+Without pipelining the limit is network round trips, not the server. SET stays close to GET with pipelining because the disk sync runs off the event loop. These numbers are from running the server natively. Inside Docker, expect lower numbers because of container networking.
 
 ## Known limits
 
@@ -89,4 +111,5 @@ Without pipelining the limit is network round trips, not the server. SET stays c
 - One global lock. Fine at this scale, a sharded store would scale better.
 - `KEYS` scans every key. `LPUSH` copies the list.
 - No `MULTI`/`EXEC`, Pub/Sub, `AUTH`, or `CONFIG`.
+- The published image is built for linux/amd64 only. On Apple Silicon it runs under emulation.
 - Absolute expiry timestamps assume the system clock does not jump while the server is down.
