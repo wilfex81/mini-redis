@@ -1,0 +1,12 @@
+services:
+  mini-redis:
+    build: .
+    ports:
+      - "6380:6380"
+    volumes:
+      - mini-redis-data:/data
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+volumes:
+  mini-redis-data:
